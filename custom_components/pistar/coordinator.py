@@ -22,7 +22,7 @@ from .client import (
 _LOGGER = logging.getLogger(__name__)
 
 REPEATER_INFO_PATH = "/mmdvmhost/repeaterinfo.php"
-LAST_HEARD_API_PATH = "/api/last_heard.php?num_transmissions=50"
+LAST_HEARD_API_PATH = "/api/last_heard.php"
 LAST_HEARD_HTML_PATH = "/mmdvmhost/lh.php"
 LOCAL_TX_HTML_PATH = "/mmdvmhost/localtx.php"
 
@@ -94,7 +94,9 @@ class PiStarCoordinator(DataUpdateCoordinator):
 
         for result in (info_result, activity_result):
             if isinstance(result, PiStarAuthenticationError):
-                raise UpdateFailed("Pi-Star rejected the configured credentials") from result
+                raise UpdateFailed(
+                    "Pi-Star rejected the configured credentials"
+                ) from result
 
         data = dict(self.data or {})
         successful_groups = 0
@@ -104,7 +106,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
             try:
                 data.update(self._parse_repeater_info(info_result))
                 successful_groups += 1
-            except Exception as err:  # malformed dashboard markup must not kill activity data
+            except Exception as err:
                 failures.append(f"repeater info parse failed: {err}")
                 _LOGGER.warning("Could not parse Pi-Star repeater info: %s", err)
         else:
@@ -207,8 +209,6 @@ class PiStarCoordinator(DataUpdateCoordinator):
                 "last_duration": duration,
                 "last_loss": self._clean_value(latest.get("loss")),
                 "last_ber": self._clean_value(latest.get("bit_error_rate")),
-                # Pi-Star treats a live non-RF row as the hotspot transmitting.
-                # A live RF row is the hotspot receiving from the radio.
                 "currently_tx": duration is None
                 and source is not None
                 and source.casefold() != "rf",
@@ -256,8 +256,6 @@ class PiStarCoordinator(DataUpdateCoordinator):
         result["last_source"] = source
 
         if len(cells) == 6:
-            # The dashboard uses a colspan row for any live transmission.
-            # Only a live non-RF row means the hotspot itself is transmitting.
             result["currently_tx"] = (
                 source is not None and source.casefold() != "rf"
             )
@@ -273,17 +271,12 @@ class PiStarCoordinator(DataUpdateCoordinator):
         result = dict(REPEATER_INFO_DEFAULTS)
         soup = BeautifulSoup(html, "html.parser")
 
-        label_map = {
+        radio_labels = {
             "trx": "trx_status",
             "tx": "tx_frequency",
             "rx": "rx_frequency",
             "fw": "firmware",
-            "dmr id": "dmr_id",
-            "dmr cc": "dmr_cc",
-            "ts1": "ts1_status",
-            "ts2": "ts2_status",
         }
-
         for row in soup.find_all("tr"):
             cells = row.find_all(["th", "td"], recursive=False)
             if len(cells) != 2 or cells[0].name != "th":
@@ -291,48 +284,63 @@ class PiStarCoordinator(DataUpdateCoordinator):
             label = self._cell_text(cells[0])
             if label is None:
                 continue
-            key = label_map.get(label.casefold())
+            key = radio_labels.get(label.casefold())
             if key is not None:
                 result[key] = self._cell_text(cells[1])
 
-        result["dmr_master"] = self._parse_dmr_master(soup)
+        dmr_table = self._find_dmr_table(soup)
+        if dmr_table is not None:
+            self._parse_dmr_table(dmr_table, result)
+
         result["dmr_network"] = self._parse_dmr_network_status(soup)
         return result
 
-    def _parse_dmr_master(self, soup: BeautifulSoup) -> str | None:
-        """Extract DMR master values without leaking into later protocol tables."""
+    def _find_dmr_table(self, soup: BeautifulSoup):
+        """Find the primary DMR repeater table, excluding cross-mode tables."""
         for table in soup.find_all("table"):
-            table_text = " ".join(table.stripped_strings)
-            if "DMR ID" not in table_text or "DMR CC" not in table_text:
+            text = " ".join(table.stripped_strings)
+            if "DMR ID" in text and "DMR CC" in text:
+                return table
+        return None
+
+    def _parse_dmr_table(self, table, result: dict[str, Any]) -> None:
+        """Parse DMR repeater values and active master names from one table."""
+        label_map = {
+            "dmr id": "dmr_id",
+            "dmr cc": "dmr_cc",
+            "ts1": "ts1_status",
+            "ts2": "ts2_status",
+        }
+        seen_ts2 = False
+        masters: list[str] = []
+
+        for row in table.find_all("tr", recursive=False):
+            ths = row.find_all("th", recursive=False)
+            tds = row.find_all("td", recursive=False)
+
+            if len(ths) == 1 and len(tds) == 1:
+                label = self._cell_text(ths[0])
+                if label is not None:
+                    key = label_map.get(label.casefold())
+                    if key is not None:
+                        result[key] = self._cell_text(tds[0])
+                        if key == "ts2_status":
+                            seen_ts2 = True
+                    continue
+
+            if not seen_ts2 or ths or not tds:
                 continue
 
-            seen_ts2 = False
-            masters: list[str] = []
-            for row in table.find_all("tr", recursive=False):
-                ths = row.find_all("th", recursive=False)
-                tds = row.find_all("td", recursive=False)
-                header = " ".join(
-                    text for cell in ths if (text := self._cell_text(cell))
-                )
-                if header.casefold() == "ts2":
-                    seen_ts2 = True
-                    continue
-                if not seen_ts2 or ths or not tds:
-                    continue
+            value = " | ".join(
+                text for cell in tds if (text := self._cell_text(cell))
+            )
+            if not value or value.casefold() == "no dmr network":
+                continue
+            if value not in masters:
+                masters.append(value)
 
-                value = " | ".join(
-                    text for cell in tds if (text := self._cell_text(cell))
-                )
-                if not value or value.casefold() == "no dmr network":
-                    continue
-                if value not in masters:
-                    masters.append(value)
-
-            if masters:
-                return " | ".join(masters)
-            return None
-
-        return None
+        if masters:
+            result["dmr_master"] = " | ".join(masters)
 
     def _parse_dmr_network_status(self, soup: BeautifulSoup) -> str:
         """Translate Pi-Star's DMR Net status colour into a stable state."""
