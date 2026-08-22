@@ -1,46 +1,43 @@
 # Pi-Star Home Assistant Integration
 
-A custom Home Assistant integration for monitoring a Pi-Star digital voice hotspot. It polls the local Pi-Star dashboard and exposes hotspot, DMR network, radio, last-heard, and local RF activity as Home Assistant sensors.
+A custom Home Assistant integration for monitoring a Pi-Star digital voice hotspot. It polls the local Pi-Star dashboard over HTTP and exposes hotspot, DMR network, radio, last-heard, and local RF activity as Home Assistant sensors. No cloud service is required.
 
-## Installation with HACS
+## What it provides
 
-1. Open HACS in Home Assistant.
-2. Open the menu in the upper-right and choose **Custom repositories**.
-3. Add `https://github.com/rthinkel/Pi-Star-HA-Integration` as an **Integration** repository.
-4. Open **Pi-Star** in HACS and choose **Download**.
-5. Restart Home Assistant.
-6. Go to **Settings > Devices & services > Add integration** and search for **Pi-Star**.
-7. Enter the Pi-Star hostname or IP address and dashboard credentials.
+- Hotspot status, firmware, and transceiver status
+- DMR network status, ID, color code, timeslots, and master
+- TX/RX frequencies
+- Gateway last-heard callsign, talkgroup, mode, source, duration, loss, and BER
+- Current transmit state
+- Local RF callsign, talkgroup, mode, duration, BER, and RSSI
 
-The default values are `pi-star.local`, username `pi-star`, and password `raspberry`. Use the credentials configured on your hotspot if they differ.
+## Install with HACS
+
+1. In HACS, open **Custom repositories**.
+2. Add `https://github.com/rthinkel/Pi-Star-HA-Integration` as an **Integration**.
+3. Open **Pi-Star** in HACS and select **Download**.
+4. Restart Home Assistant.
+5. Go to **Settings → Devices & services → Add integration** and search for **Pi-Star**.
+6. Enter the Pi-Star hostname/IP address, dashboard username and password, and desired polling interval.
+
+Pi-Star commonly uses `pi-star.local`, username `pi-star`, and password `raspberry` by default. Use your hotspot's configured values if they differ.
 
 ## Manual installation
 
-Copy `custom_components/pistar` into your Home Assistant configuration directory so the final path is:
+Copy `custom_components/pistar` into your Home Assistant configuration directory so the integration is located at:
 
 ```text
 /config/custom_components/pistar/
 ```
 
-Restart Home Assistant, then add **Pi-Star** from **Settings > Devices & services**.
-
-## Sensors
-
-The integration currently exposes sensors for:
-
-- Hotspot status, firmware, and transceiver status
-- DMR network status, DMR ID, color code, timeslot status, and master
-- TX and RX frequency
-- Gateway last-heard callsign, talkgroup, mode, source, duration, loss, and BER
-- Current transmit state
-- Local RF last-heard callsign, talkgroup, mode, duration, BER, and RSSI
+Restart Home Assistant, then add **Pi-Star** from **Settings → Devices & services → Add integration**.
 
 ## Notes
 
-- This integration uses local polling over HTTP and does not require a cloud service.
-- Pi-Star dashboard HTML can vary between versions. If a Pi-Star update changes the dashboard markup, some parsed sensors may need to be updated.
-- This project is an independent Home Assistant integration and is not part of the Pi-Star project or Home Assistant Core.
+Pi-Star dashboard markup can vary between releases, so a Pi-Star update may occasionally require parser changes. This project is an independent integration and is not affiliated with Pi-Star or Home Assistant Core.
 
-## Issues
+Report problems through the repository's **Issues** page and include your Home Assistant version, Pi-Star version, and relevant log output when possible.
 
-Report bugs or compatibility problems in the repository's GitHub Issues section. Include your Home Assistant version, Pi-Star version, and relevant Home Assistant log output when possible.
+## License
+
+MIT
