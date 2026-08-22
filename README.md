@@ -1,6 +1,6 @@
 # Pi-Star Home Assistant Integration
 
-A custom Home Assistant integration for monitoring a Pi-Star digital voice hotspot. It polls the local Pi-Star dashboard over HTTP and exposes hotspot, DMR network, radio, last-heard, and local RF activity as Home Assistant sensors. No cloud service is required.
+A custom Home Assistant integration for monitoring a Pi-Star digital voice hotspot. It polls the local Pi-Star dashboard and exposes hotspot, DMR network, radio, last-heard, and local RF activity as Home Assistant sensors. No cloud service is required.
 
 ## What it provides
 
@@ -34,9 +34,9 @@ Restart Home Assistant, then add **Pi-Star** from **Settings → Devices & servi
 
 ## Notes
 
-Pi-Star dashboard markup can vary between releases, so a Pi-Star update may occasionally require parser changes. This project is an independent integration and is not affiliated with Pi-Star or Home Assistant Core.
+The integration prefers Pi-Star's structured last-heard JSON API for activity data and automatically falls back to the legacy dashboard HTML endpoints when the API is unavailable. Partial endpoint failures retain the last valid data instead of dropping every sensor at once.
 
-Report problems through the repository's **Issues** page and include your Home Assistant version, Pi-Star version, and relevant log output when possible.
+This project is independent and is not affiliated with Pi-Star or Home Assistant Core. Report problems through the repository's **Issues** page and include your Home Assistant version, Pi-Star version, and relevant log output when possible.
 
 ## License
 
