@@ -1,0 +1,33 @@
+{
+  "entity": {
+    "sensor": {
+      "status": {"default": "mdi:radio-tower"},
+      "dmr_network": {"default": "mdi:network"},
+      "trx_status": {"default": "mdi:radio"},
+      "firmware": {"default": "mdi:chip"},
+      "tx_frequency": {"default": "mdi:sine-wave"},
+      "rx_frequency": {"default": "mdi:sine-wave"},
+      "dmr_id": {"default": "mdi:identifier"},
+      "dmr_cc": {"default": "mdi:palette"},
+      "ts1_status": {"default": "mdi:numeric-1-box"},
+      "ts2_status": {"default": "mdi:numeric-2-box"},
+      "dmr_master": {"default": "mdi:server"},
+      "last_time": {"default": "mdi:clock-outline"},
+      "last_callsign": {"default": "mdi:account-voice"},
+      "last_tg": {"default": "mdi:pound"},
+      "last_mode": {"default": "mdi:radio"},
+      "last_source": {"default": "mdi:antenna"},
+      "last_duration": {"default": "mdi:timer-outline"},
+      "last_loss": {"default": "mdi:signal-off"},
+      "last_ber": {"default": "mdi:percent"},
+      "last_rssi": {"default": "mdi:signal"},
+      "currently_tx": {"default": "mdi:broadcast"},
+      "local_last_callsign": {"default": "mdi:account-voice"},
+      "local_last_tg": {"default": "mdi:pound"},
+      "local_last_mode": {"default": "mdi:radio"},
+      "local_last_duration": {"default": "mdi:timer-outline"},
+      "local_last_ber": {"default": "mdi:percent"},
+      "local_last_rssi": {"default": "mdi:signal"}
+    }
+  }
+}
