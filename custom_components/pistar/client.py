@@ -1,4 +1,5 @@
 """HTTP client for the Pi-Star dashboard."""
+
 from __future__ import annotations
 
 import asyncio
@@ -44,6 +45,10 @@ def normalize_base_url(host: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         raise ValueError("Pi-Star host must be an HTTP(S) hostname, IP, or URL")
+    if parsed.username or parsed.password:
+        raise ValueError("Credentials must not be embedded in the Pi-Star URL")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Pi-Star URL must not contain a query or fragment")
 
     path = parsed.path.rstrip("/")
     return urlunsplit((parsed.scheme.lower(), parsed.netloc, path, "", ""))
@@ -59,6 +64,7 @@ class PiStarClient:
         username: str,
         password: str,
     ) -> None:
+        """Initialize the client."""
         self._session = session
         self.base_url = normalize_base_url(host)
         self._auth = (
@@ -66,6 +72,11 @@ class PiStarClient:
             if username or password
             else None
         )
+
+    @property
+    def configuration_url(self) -> str:
+        """Return the dashboard URL."""
+        return self.base_url
 
     def _url(self, path: str) -> str:
         """Build an endpoint URL."""
@@ -81,6 +92,10 @@ class PiStarClient:
     async def async_get_json(self, path: str) -> Any:
         """Fetch and decode a JSON endpoint."""
         return await self._async_request(path, as_json=True)
+
+    async def async_validate(self) -> None:
+        """Validate that the dashboard can be reached."""
+        await self.async_get_text("/mmdvmhost/repeaterinfo.php")
 
     async def _async_request(self, path: str, *, as_json: bool) -> Any:
         """Fetch one endpoint, retrying transient failures once."""
@@ -103,7 +118,6 @@ class PiStarClient:
                         raise PiStarNotFoundError(
                             f"Pi-Star endpoint {path} was not found"
                         )
-
                     if response.status in RETRYABLE_STATUS_CODES:
                         last_error = PiStarResponseError(
                             f"Pi-Star {path} returned HTTP {response.status}"
@@ -112,7 +126,6 @@ class PiStarClient:
                             await asyncio.sleep(0.4 * (attempt + 1))
                             continue
                         raise last_error
-
                     if response.status != 200:
                         raise PiStarResponseError(
                             f"Pi-Star {path} returned HTTP {response.status}"
@@ -128,7 +141,11 @@ class PiStarClient:
 
                     return await response.text(errors="replace")
 
-            except (PiStarAuthenticationError, PiStarNotFoundError, PiStarResponseError):
+            except (
+                PiStarAuthenticationError,
+                PiStarNotFoundError,
+                PiStarResponseError,
+            ):
                 raise
             except (aiohttp.ClientError, TimeoutError) as err:
                 last_error = err
