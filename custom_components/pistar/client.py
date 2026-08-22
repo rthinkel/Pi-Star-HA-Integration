@@ -83,7 +83,7 @@ class PiStarClient:
         return await self._async_request(path, as_json=True)
 
     async def _async_request(self, path: str, *, as_json: bool) -> Any:
-        """Fetch one endpoint, retrying only transient failures."""
+        """Fetch one endpoint, retrying transient failures once."""
         url = self._url(path)
         last_error: Exception | None = None
 
@@ -128,12 +128,8 @@ class PiStarClient:
 
                     return await response.text(errors="replace")
 
-            except (PiStarAuthenticationError, PiStarNotFoundError):
+            except (PiStarAuthenticationError, PiStarNotFoundError, PiStarResponseError):
                 raise
-            except PiStarResponseError as err:
-                last_error = err
-                if attempt + 1 >= MAX_ATTEMPTS:
-                    raise
             except (aiohttp.ClientError, TimeoutError) as err:
                 last_error = err
                 if attempt + 1 < MAX_ATTEMPTS:
