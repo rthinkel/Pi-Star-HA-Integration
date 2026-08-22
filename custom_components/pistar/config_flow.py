@@ -1,20 +1,26 @@
 """Config flow for Pi-Star integration."""
 import logging
-import aiohttp
+
 import voluptuous as vol
-
 from homeassistant import config_entries
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .client import (
+    PiStarAuthenticationError,
+    PiStarClient,
+    PiStarError,
+    normalize_base_url,
+)
 from .const import (
-    DOMAIN,
-    DEFAULT_HOST,
-    DEFAULT_USERNAME,
-    DEFAULT_PASSWORD,
-    DEFAULT_SCAN_INTERVAL,
     CONF_HOST,
-    CONF_USERNAME,
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+    DEFAULT_HOST,
+    DEFAULT_PASSWORD,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_USERNAME,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,20 +35,15 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-async def validate_connection(host: str, username: str, password: str) -> None:
-    """Try connecting to Pi-Star and raise on failure."""
-    auth = aiohttp.BasicAuth(username, password)
-    timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"http://{host}/",
-            auth=auth,
-            timeout=timeout,
-        ) as response:
-            if response.status not in (200, 401):
-                raise CannotConnect(f"HTTP {response.status}")
-            if response.status == 401:
-                raise InvalidAuth
+async def validate_connection(hass, host: str, username: str, password: str) -> None:
+    """Verify that the Pi-Star MMDVM dashboard can be reached."""
+    client = PiStarClient(
+        async_get_clientsession(hass),
+        host,
+        username,
+        password,
+    )
+    await client.async_get_text("/mmdvmhost/repeaterinfo.php")
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -55,24 +56,28 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
+            host = user_input[CONF_HOST].strip()
             try:
                 await validate_connection(
-                    user_input[CONF_HOST],
+                    self.hass,
+                    host,
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
                 )
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
+            except PiStarAuthenticationError:
                 errors["base"] = "invalid_auth"
+            except (PiStarError, ValueError):
+                errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected error during Pi-Star config flow")
                 errors["base"] = "unknown"
             else:
-                await self.async_set_unique_id(user_input[CONF_HOST].strip().lower())
+                normalized_url = normalize_base_url(host)
+                await self.async_set_unique_id(normalized_url.casefold())
                 self._abort_if_unique_id_configured()
+                user_input[CONF_HOST] = host
                 return self.async_create_entry(
-                    title=f"Pi-Star ({user_input[CONF_HOST]})",
+                    title=f"Pi-Star ({host})",
                     data=user_input,
                 )
 
@@ -81,11 +86,3 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
         )
-
-
-class CannotConnect(Exception):
-    """Error to indicate the Pi-Star host cannot be reached."""
-
-
-class InvalidAuth(Exception):
-    """Error to indicate invalid Pi-Star credentials."""
