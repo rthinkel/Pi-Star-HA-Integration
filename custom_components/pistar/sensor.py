@@ -1,91 +1,167 @@
 """Pi-Star sensors."""
-import logging
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from __future__ import annotations
 
-_LOGGER = logging.getLogger(__name__)
+from dataclasses import dataclass
+from typing import Any
 
-SENSOR_DEFINITIONS = [
-    # --- Hotspot health ---
-    {"key": "status",        "name": "Pi-Star Status",       "icon": "mdi:radio-tower",    "unit": None},
-    {"key": "dmr_network",   "name": "Pi-Star DMR Network",  "icon": "mdi:network",        "unit": None},
-    {"key": "trx_status",    "name": "Pi-Star TRX Status",   "icon": "mdi:radio",          "unit": None},
-    {"key": "firmware",      "name": "Pi-Star Firmware",     "icon": "mdi:chip",           "unit": None},
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    EntityCategory,
+    UnitOfFrequency,
+    UnitOfTime,
+)
 
-    # --- Radio info ---
-    {"key": "tx_frequency",  "name": "Pi-Star TX Frequency", "icon": "mdi:sine-wave",      "unit": None},
-    {"key": "rx_frequency",  "name": "Pi-Star RX Frequency", "icon": "mdi:sine-wave",      "unit": None},
-
-    # --- DMR repeater info ---
-    {"key": "dmr_id",        "name": "Pi-Star DMR ID",       "icon": "mdi:identifier",     "unit": None},
-    {"key": "dmr_cc",        "name": "Pi-Star Color Code",   "icon": "mdi:palette",        "unit": None},
-    {"key": "ts1_status",    "name": "Pi-Star TS1 Status",   "icon": "mdi:numeric-1-box",  "unit": None},
-    {"key": "ts2_status",    "name": "Pi-Star TS2 Status",   "icon": "mdi:numeric-2-box",  "unit": None},
-    {"key": "dmr_master",    "name": "Pi-Star DMR Master",   "icon": "mdi:server",         "unit": None},
-
-    # --- Gateway last heard ---
-    {"key": "last_time",      "name": "Pi-Star Last Heard Time",     "icon": "mdi:clock-outline",  "unit": None},
-    {"key": "last_callsign",  "name": "Pi-Star Last Heard Callsign", "icon": "mdi:account-voice",  "unit": None},
-    {"key": "last_tg",        "name": "Pi-Star Last Heard TG",       "icon": "mdi:pound",          "unit": None},
-    {"key": "last_mode",      "name": "Pi-Star Last Heard Mode",     "icon": "mdi:radio",          "unit": None},
-    {"key": "last_source",    "name": "Pi-Star Last Heard Source",   "icon": "mdi:antenna",        "unit": None},
-    {"key": "last_duration",  "name": "Pi-Star Last Heard Duration", "icon": "mdi:timer-outline",  "unit": "s"},
-    {"key": "last_loss",      "name": "Pi-Star Last Heard Loss",     "icon": "mdi:signal-off",     "unit": "%"},
-    {"key": "last_ber",       "name": "Pi-Star Last Heard BER",      "icon": "mdi:percent",        "unit": "%"},
-    {"key": "currently_tx",   "name": "Pi-Star Currently TX",        "icon": "mdi:broadcast",      "unit": None},
-
-    # --- Local RF last heard ---
-    {"key": "local_last_callsign", "name": "Pi-Star Local Last Callsign", "icon": "mdi:account-voice", "unit": None},
-    {"key": "local_last_tg",       "name": "Pi-Star Local Last TG",       "icon": "mdi:pound",         "unit": None},
-    {"key": "local_last_mode",     "name": "Pi-Star Local Last Mode",     "icon": "mdi:radio",         "unit": None},
-    {"key": "local_last_duration", "name": "Pi-Star Local Last Duration", "icon": "mdi:timer-outline", "unit": "s"},
-    {"key": "local_last_ber",      "name": "Pi-Star Local Last BER",      "icon": "mdi:percent",       "unit": "%"},
-    {"key": "local_last_rssi",     "name": "Pi-Star Local Last RSSI",     "icon": "mdi:signal",        "unit": None},
-]
+from .entity import PiStarEntity
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+@dataclass(frozen=True, kw_only=True)
+class PiStarSensorEntityDescription(SensorEntityDescription):
+    """Describe a Pi-Star sensor."""
+
+    requires_value: bool = False
+
+
+SENSORS: tuple[PiStarSensorEntityDescription, ...] = (
+    PiStarSensorEntityDescription(key="status", translation_key="status"),
+    PiStarSensorEntityDescription(key="dmr_network", translation_key="dmr_network"),
+    PiStarSensorEntityDescription(key="trx_status", translation_key="trx_status"),
+    PiStarSensorEntityDescription(
+        key="firmware",
+        translation_key="firmware",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    PiStarSensorEntityDescription(
+        key="tx_frequency",
+        translation_key="tx_frequency",
+        device_class=SensorDeviceClass.FREQUENCY,
+        native_unit_of_measurement=UnitOfFrequency.MEGAHERTZ,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="rx_frequency",
+        translation_key="rx_frequency",
+        device_class=SensorDeviceClass.FREQUENCY,
+        native_unit_of_measurement=UnitOfFrequency.MEGAHERTZ,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="dmr_id",
+        translation_key="dmr_id",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    PiStarSensorEntityDescription(
+        key="dmr_cc",
+        translation_key="dmr_cc",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    PiStarSensorEntityDescription(key="ts1_status", translation_key="ts1_status"),
+    PiStarSensorEntityDescription(key="ts2_status", translation_key="ts2_status"),
+    PiStarSensorEntityDescription(key="dmr_master", translation_key="dmr_master"),
+    PiStarSensorEntityDescription(key="last_time", translation_key="last_time"),
+    PiStarSensorEntityDescription(key="last_callsign", translation_key="last_callsign"),
+    PiStarSensorEntityDescription(key="last_tg", translation_key="last_tg"),
+    PiStarSensorEntityDescription(key="last_mode", translation_key="last_mode"),
+    PiStarSensorEntityDescription(key="last_source", translation_key="last_source"),
+    PiStarSensorEntityDescription(
+        key="last_duration",
+        translation_key="last_duration",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="last_loss",
+        translation_key="last_loss",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="last_ber",
+        translation_key="last_ber",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="last_rssi",
+        translation_key="last_rssi",
+        requires_value=True,
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="currently_tx", translation_key="currently_tx"
+    ),
+    PiStarSensorEntityDescription(
+        key="local_last_callsign", translation_key="local_last_callsign"
+    ),
+    PiStarSensorEntityDescription(
+        key="local_last_tg", translation_key="local_last_tg"
+    ),
+    PiStarSensorEntityDescription(
+        key="local_last_mode", translation_key="local_last_mode"
+    ),
+    PiStarSensorEntityDescription(
+        key="local_last_duration",
+        translation_key="local_last_duration",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="local_last_ber",
+        translation_key="local_last_ber",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    PiStarSensorEntityDescription(
+        key="local_last_rssi",
+        translation_key="local_last_rssi",
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+)
+
+
+async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up Pi-Star sensors from a config entry."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [
-        PiStarSensor(coordinator, entry, defn)
-        for defn in SENSOR_DEFINITIONS
-    ]
-    async_add_entities(entities)
+    coordinator = entry.runtime_data
+    async_add_entities(
+        PiStarSensor(coordinator, entry.entry_id, entry.title, description)
+        for description in SENSORS
+    )
 
 
-class PiStarSensor(CoordinatorEntity, SensorEntity):
+class PiStarSensor(PiStarEntity, SensorEntity):
     """Representation of a Pi-Star sensor."""
 
-    def __init__(self, coordinator, entry, definition):
-        super().__init__(coordinator)
-        self._key = definition["key"]
-        self._attr_name = definition["name"]
-        self._attr_icon = definition["icon"]
-        self._attr_native_unit_of_measurement = definition["unit"]
-        self._attr_unique_id = f"{entry.entry_id}_{self._key}"
-        self._entry = entry
+    entity_description: PiStarSensorEntityDescription
+
+    def __init__(self, coordinator, entry_id, title, description) -> None:
+        """Initialize a Pi-Star sensor."""
+        super().__init__(coordinator, entry_id, title)
+        self.entity_description = description
+        self._attr_unique_id = f"{entry_id}_{description.key}"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the sensor value."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get(self._key)
+        return self.coordinator.data.get(self.entity_description.key)
 
     @property
-    def available(self):
-        """Return True if the coordinator has data."""
-        return self.coordinator.last_update_success
-
-    @property
-    def device_info(self):
-        """Return device information for the Pi-Star hotspot."""
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": f"Pi-Star ({self._entry.data.get('host', 'pi-star.local')})",
-            "manufacturer": "Andy Taylor (MW0MWZ)",
-            "model": "Pi-Star Digital Voice",
-        }
+    def available(self) -> bool:
+        """Return whether the coordinator has usable data."""
+        if not super().available:
+            return False
+        if self.entity_description.requires_value:
+            return self.native_value is not None
+        return True
