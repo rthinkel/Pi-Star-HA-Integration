@@ -4,7 +4,6 @@ import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 
 from .const import (
     DOMAIN,
@@ -52,6 +51,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
+        """Handle the initial configuration step."""
         errors = {}
 
         if user_input is not None:
@@ -69,6 +69,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during Pi-Star config flow")
                 errors["base"] = "unknown"
             else:
+                await self.async_set_unique_id(user_input[CONF_HOST].strip().lower())
+                self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=f"Pi-Star ({user_input[CONF_HOST]})",
                     data=user_input,
@@ -82,8 +84,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class CannotConnect(Exception):
-    pass
+    """Error to indicate the Pi-Star host cannot be reached."""
 
 
 class InvalidAuth(Exception):
-    pass
+    """Error to indicate invalid Pi-Star credentials."""

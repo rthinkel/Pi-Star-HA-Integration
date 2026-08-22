@@ -82,6 +82,7 @@ class PiStarSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self):
+        """Return device information for the Pi-Star hotspot."""
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
             "name": f"Pi-Star ({self._entry.data.get('host', 'pi-star.local')})",
