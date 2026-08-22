@@ -1,14 +1,16 @@
 """Pi-Star data coordinator."""
+
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import logging
 import re
-from datetime import timedelta
 from typing import Any
 
 from bs4 import BeautifulSoup
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import (
@@ -35,6 +37,7 @@ LAST_HEARD_DEFAULTS = {
     "last_ber": None,
     "last_loss": None,
     "last_duration": None,
+    "last_rssi": None,
     "currently_tx": False,
 }
 
@@ -58,43 +61,47 @@ REPEATER_INFO_DEFAULTS = {
     "ts1_status": None,
     "ts2_status": None,
     "dmr_master": None,
+    "currently_tx": False,
 }
 
 LOCAL_RF_MODES = {"D-Star", "YSF", "P25", "NXDN", "M17"}
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
-class PiStarCoordinator(DataUpdateCoordinator):
-    """Coordinator to fetch and parse Pi-Star dashboard data."""
+class PiStarCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinate Pi-Star polling and parsing."""
 
-    def __init__(self, hass, host, username, password, scan_interval):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: PiStarClient,
+        scan_interval: int,
+    ) -> None:
+        """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name="Pi-Star",
             update_interval=timedelta(seconds=scan_interval),
         )
-        self.host = host
-        self.username = username
-        self.password = password
-        self._client = PiStarClient(
-            async_get_clientsession(hass),
-            host,
-            username,
-            password,
-        )
+        self.client = client
         self._last_heard_api_supported: bool | None = None
+        self.last_refresh_groups: dict[str, bool] = {
+            "repeater_info": False,
+            "activity": False,
+        }
 
-    async def _async_update_data(self):
+    async def _async_update_data(self) -> dict[str, Any]:
         """Fetch Pi-Star information and activity data."""
         info_result, activity_result = await asyncio.gather(
-            self._client.async_get_text(REPEATER_INFO_PATH),
+            self.client.async_get_text(REPEATER_INFO_PATH),
             self._async_fetch_activity(),
             return_exceptions=True,
         )
 
         for result in (info_result, activity_result):
             if isinstance(result, PiStarAuthenticationError):
-                raise UpdateFailed(
+                raise ConfigEntryAuthFailed(
                     "Pi-Star rejected the configured credentials"
                 ) from result
 
@@ -102,11 +109,17 @@ class PiStarCoordinator(DataUpdateCoordinator):
         successful_groups = 0
         failures: list[str] = []
 
+        self.last_refresh_groups = {
+            "repeater_info": isinstance(info_result, str),
+            "activity": isinstance(activity_result, dict),
+        }
+
         if isinstance(info_result, str):
             try:
                 data.update(self._parse_repeater_info(info_result))
                 successful_groups += 1
             except Exception as err:
+                self.last_refresh_groups["repeater_info"] = False
                 failures.append(f"repeater info parse failed: {err}")
                 _LOGGER.warning("Could not parse Pi-Star repeater info: %s", err)
         else:
@@ -130,7 +143,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
         """Fetch structured activity, with HTML fallback for older dashboards."""
         if self._last_heard_api_supported is not False:
             try:
-                payload = await self._client.async_get_json(LAST_HEARD_API_PATH)
+                payload = await self.client.async_get_json(LAST_HEARD_API_PATH)
             except PiStarNotFoundError:
                 self._last_heard_api_supported = False
                 _LOGGER.debug(
@@ -153,8 +166,8 @@ class PiStarCoordinator(DataUpdateCoordinator):
                 )
 
         lh_result, local_result = await asyncio.gather(
-            self._client.async_get_text(LAST_HEARD_HTML_PATH),
-            self._client.async_get_text(LOCAL_TX_HTML_PATH),
+            self.client.async_get_text(LAST_HEARD_HTML_PATH),
+            self.client.async_get_text(LOCAL_TX_HTML_PATH),
             return_exceptions=True,
         )
 
@@ -186,7 +199,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
         return activity
 
     def _parse_api_activity(self, payload: list[Any]) -> dict[str, Any]:
-        """Parse Pi-Star's structured /api/last_heard.php response."""
+        """Parse Pi-Star's structured last-heard API response."""
         result: dict[str, Any] = {
             **LAST_HEARD_DEFAULTS,
             **LOCAL_RF_DEFAULTS,
@@ -197,7 +210,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
 
         latest = rows[0]
         source = self._clean_value(latest.get("src"))
-        duration = self._clean_value(latest.get("duration"))
+        duration_text = self._clean_value(latest.get("duration"))
 
         result.update(
             {
@@ -206,10 +219,11 @@ class PiStarCoordinator(DataUpdateCoordinator):
                 "last_tg": self._clean_value(latest.get("target")),
                 "last_mode": self._normalize_mode(latest.get("mode")),
                 "last_source": source,
-                "last_duration": duration,
-                "last_loss": self._clean_value(latest.get("loss")),
-                "last_ber": self._clean_value(latest.get("bit_error_rate")),
-                "currently_tx": duration is None
+                "last_duration": self._numeric_value(duration_text),
+                "last_loss": self._numeric_value(latest.get("loss")),
+                "last_ber": self._numeric_value(latest.get("bit_error_rate")),
+                "last_rssi": self._numeric_value(latest.get("rssi")),
+                "currently_tx": duration_text is None
                 and source is not None
                 and source.casefold() != "rf",
             }
@@ -230,9 +244,11 @@ class PiStarCoordinator(DataUpdateCoordinator):
                     "local_last_callsign": self._clean_value(row.get("callsign")),
                     "local_last_tg": self._clean_value(row.get("target")),
                     "local_last_mode": mode,
-                    "local_last_duration": self._clean_value(row.get("duration")),
-                    "local_last_ber": self._clean_value(row.get("bit_error_rate")),
-                    "local_last_rssi": self._clean_value(row.get("rssi")),
+                    "local_last_duration": self._numeric_value(row.get("duration")),
+                    "local_last_ber": self._numeric_value(
+                        row.get("bit_error_rate")
+                    ),
+                    "local_last_rssi": self._numeric_value(row.get("rssi")),
                 }
             )
             break
@@ -240,7 +256,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
         return result
 
     def _parse_last_heard(self, html: str) -> dict[str, Any]:
-        """Parse /mmdvmhost/lh.php gateway activity."""
+        """Parse legacy gateway activity HTML."""
         result = dict(LAST_HEARD_DEFAULTS)
         soup = BeautifulSoup(html, "html.parser")
         row = self._first_data_row(soup, minimum_cells=5)
@@ -260,14 +276,14 @@ class PiStarCoordinator(DataUpdateCoordinator):
                 source is not None and source.casefold() != "rf"
             )
         elif len(cells) >= 8:
-            result["last_duration"] = self._cell_text(cells[5])
-            result["last_loss"] = self._cell_text(cells[6])
-            result["last_ber"] = self._cell_text(cells[7])
+            result["last_duration"] = self._numeric_value(self._cell_text(cells[5]))
+            result["last_loss"] = self._numeric_value(self._cell_text(cells[6]))
+            result["last_ber"] = self._numeric_value(self._cell_text(cells[7]))
 
         return result
 
     def _parse_repeater_info(self, html: str) -> dict[str, Any]:
-        """Parse /mmdvmhost/repeaterinfo.php radio and network information."""
+        """Parse radio and network information."""
         result = dict(REPEATER_INFO_DEFAULTS)
         soup = BeautifulSoup(html, "html.parser")
 
@@ -285,8 +301,18 @@ class PiStarCoordinator(DataUpdateCoordinator):
             if label is None:
                 continue
             key = radio_labels.get(label.casefold())
-            if key is not None:
-                result[key] = self._cell_text(cells[1])
+            if key is None:
+                continue
+            value = self._cell_text(cells[1])
+            result[key] = (
+                self._numeric_value(value)
+                if key in {"tx_frequency", "rx_frequency"}
+                else value
+            )
+
+        trx_status = result["trx_status"]
+        if isinstance(trx_status, str):
+            result["currently_tx"] = trx_status.upper().startswith("TX")
 
         dmr_table = self._find_dmr_table(soup)
         if dmr_table is not None:
@@ -304,7 +330,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
         return None
 
     def _parse_dmr_table(self, table, result: dict[str, Any]) -> None:
-        """Parse DMR repeater values and active master names from one table."""
+        """Parse DMR repeater values and active master names."""
         label_map = {
             "dmr id": "dmr_id",
             "dmr cc": "dmr_cc",
@@ -343,7 +369,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
             result["dmr_master"] = " | ".join(masters)
 
     def _parse_dmr_network_status(self, soup: BeautifulSoup) -> str:
-        """Translate Pi-Star's DMR Net status colour into a stable state."""
+        """Translate Pi-Star's DMR status colour into a stable state."""
         for td in soup.find_all("td"):
             text = self._cell_text(td)
             if text is None or text.casefold() != "dmr net":
@@ -363,7 +389,7 @@ class PiStarCoordinator(DataUpdateCoordinator):
         return "unknown"
 
     def _parse_local_rf(self, html: str) -> dict[str, Any]:
-        """Parse /mmdvmhost/localtx.php local RF activity."""
+        """Parse legacy local RF activity HTML."""
         result = dict(LOCAL_RF_DEFAULTS)
         soup = BeautifulSoup(html, "html.parser")
 
@@ -382,9 +408,15 @@ class PiStarCoordinator(DataUpdateCoordinator):
         result["local_last_tg"] = self._cell_text(cells[3])
 
         if len(cells) >= 8:
-            result["local_last_duration"] = self._cell_text(cells[5])
-            result["local_last_ber"] = self._cell_text(cells[6])
-            result["local_last_rssi"] = self._cell_text(cells[7])
+            result["local_last_duration"] = self._numeric_value(
+                self._cell_text(cells[5])
+            )
+            result["local_last_ber"] = self._numeric_value(
+                self._cell_text(cells[6])
+            )
+            result["local_last_rssi"] = self._numeric_value(
+                self._cell_text(cells[7])
+            )
 
         return result
 
@@ -414,12 +446,23 @@ class PiStarCoordinator(DataUpdateCoordinator):
         """Normalize a Pi-Star scalar value while preserving its content."""
         if value is None:
             return None
-        text = str(value).replace("\xa0", " ").strip()
+        text = " ".join(str(value).replace("\xa0", " ").split())
         return text or None
 
     @classmethod
+    def _numeric_value(cls, value: Any) -> float | None:
+        """Extract the first numeric value from a Pi-Star scalar."""
+        text = cls._clean_value(value)
+        if text is None or (match := _NUMBER_RE.search(text)) is None:
+            return None
+        try:
+            return float(match.group())
+        except ValueError:
+            return None
+
+    @classmethod
     def _normalize_mode(cls, value: Any) -> str | None:
-        """Normalize Pi-Star's DMR 'Slot N' display to its dashboard 'TSN' form."""
+        """Normalize Pi-Star's DMR 'Slot N' display to dashboard 'TSN' form."""
         text = cls._clean_value(value)
         if text is None:
             return None
