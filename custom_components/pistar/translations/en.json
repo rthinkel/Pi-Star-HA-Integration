@@ -5,26 +5,90 @@
       "user": {
         "title": "Connect to Pi-Star",
         "data": {
-          "host": "Hostname or IP address",
+          "host": "Hostname, IP address, or URL",
           "username": "Username",
-          "password": "Password",
-          "scan_interval": "Poll interval (seconds)"
+          "password": "Password"
         },
         "data_description": {
-          "host": "The hostname or IP address of your Pi-Star hotspot.",
+          "host": "The local Pi-Star dashboard address.",
           "username": "The Pi-Star dashboard username.",
-          "password": "The Pi-Star dashboard password.",
-          "scan_interval": "How often Home Assistant should refresh Pi-Star data."
+          "password": "The Pi-Star dashboard password."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Pi-Star",
+        "description": "Enter the dashboard credentials for {host}.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Pi-Star",
+        "data": {
+          "host": "Hostname, IP address, or URL",
+          "username": "Username",
+          "password": "New password"
+        },
+        "data_description": {
+          "password": "Leave blank to keep the current password."
         }
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to Pi-Star. Check the hostname or IP address and confirm Pi-Star is running.",
+      "cannot_connect": "Cannot connect to Pi-Star. Check the address and confirm Pi-Star is running.",
       "invalid_auth": "Invalid username or password.",
+      "invalid_host": "Enter a valid Pi-Star HTTP or HTTPS address.",
       "unknown": "Unexpected error. Check the Home Assistant logs for details."
     },
     "abort": {
-      "already_configured": "This Pi-Star host is already configured."
+      "already_configured": "This Pi-Star dashboard is already configured.",
+      "reauth_successful": "Reauthentication was successful.",
+      "reconfigure_successful": "Pi-Star was reconfigured successfully."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Pi-Star options",
+        "data": {
+          "scan_interval": "Poll interval"
+        },
+        "data_description": {
+          "scan_interval": "How often Home Assistant refreshes Pi-Star data, in seconds (10–3600)."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {"name": "Status"},
+      "dmr_network": {"name": "DMR network"},
+      "trx_status": {"name": "TRX status"},
+      "firmware": {"name": "Firmware"},
+      "tx_frequency": {"name": "TX frequency"},
+      "rx_frequency": {"name": "RX frequency"},
+      "dmr_id": {"name": "DMR ID"},
+      "dmr_cc": {"name": "Color code"},
+      "ts1_status": {"name": "TS1 status"},
+      "ts2_status": {"name": "TS2 status"},
+      "dmr_master": {"name": "DMR master"},
+      "last_time": {"name": "Last heard time"},
+      "last_callsign": {"name": "Last heard callsign"},
+      "last_tg": {"name": "Last heard TG"},
+      "last_mode": {"name": "Last heard mode"},
+      "last_source": {"name": "Last heard source"},
+      "last_duration": {"name": "Last heard duration"},
+      "last_loss": {"name": "Last heard loss"},
+      "last_ber": {"name": "Last heard BER"},
+      "last_rssi": {"name": "Last heard RSSI"},
+      "currently_tx": {"name": "Currently TX"},
+      "local_last_callsign": {"name": "Local last callsign"},
+      "local_last_tg": {"name": "Local last TG"},
+      "local_last_mode": {"name": "Local last mode"},
+      "local_last_duration": {"name": "Local last duration"},
+      "local_last_ber": {"name": "Local last BER"},
+      "local_last_rssi": {"name": "Local last RSSI"}
     }
   }
 }
