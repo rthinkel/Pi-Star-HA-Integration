@@ -14,7 +14,6 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
-          ignore: license topics
 
   validate-hassfest:
     runs-on: ubuntu-latest
